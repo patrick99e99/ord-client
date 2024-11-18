@@ -5,14 +5,10 @@ endpoints for Bitcoin ordinals indexers/explorers.  For more information, check
 out the ordinals recursive documentation at:
 https://docs.ordinals.com/inscriptions/recursion.html
 
-Version 1.0.0 has been inscribed on the Bitcoin network and is publicly
-available for use.  Its inscription id is:
-`53c1e855c3d3f6cd7e1ac0b20c9ac369e7b55f64cc83f1f26f9aeb43b40902cei0`
-
 ## Basic usage:
 
 ```javascript
-import { OrdClient } from '/content/53c1e855c3d3f6cd7e1ac0b20c9ac369e7b55f64cc83f1f26f9aeb43b40902cei0';
+import { OrdClient } from '<ord client inscription id>';
 
 const client = new OrdClient();
 
@@ -35,20 +31,24 @@ document.querySelector('img').setAttribute('src', `data:image/svg+xml;base64,${b
 
 ```
 
-You can customize Ord Client's HTTP behavior by calling the `configure` class
-method with options such as:
+You can customize Ord Client's HTTP behavior by providing a config object
+during instantiation:
 
 ```javascript
-OrdClient.configure({
+new OrdClient({
   fetch: FancyCustomHTTPGetFunction,
   fetchOptions: {
     headers: {
       'Content-type: application/json',
     }
   },
+  host: 'https://ordinals.com',
   toJSON: (response) => FancyCustomJSONFunction(response),
 });
 ```
+
+Note that the `host` parameter option in the configuration object can be used
+to allow communication with indexers OUTSIDE of the ordinal ecosystem.
 
 Additionally for convenience, you can get your current inscription's id by
 calling the `currentInscriptionId` static or instance methods:

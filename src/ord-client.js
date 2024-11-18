@@ -1,25 +1,28 @@
 const LATEST_INSCRIPTION_INDEX = -1;
+const CONTENT_API_SCOPE = '/content';
+const RECURSIVE_OPTIONS = { scope: '/r' };
 
 export class OrdClient {
-  static fetch        = fetch && globalThis && fetch.bind(globalThis);
-  static fetchOptions = {};
-  static toJSON       = (response) => response.json();
-  static VERSION      = '1.0.0';
+  static VERSION = '2.0.0';
 
-  static configure(config) {
-    if (!config) { throw 'no config provided!'; }
+  static validate(config) {
+    if (config.constructor.name !== 'Object') { throw 'config must be an object!'; }
 
     if (config.fetch) {
       if (!(config.fetch instanceof Function)) { throw 'fetch parameter must be a function!'; }
-      this.fetch = config.fetch;
     }
 
     if (config.toJSON) {
       if (!(config.toJSON instanceof Function)) { throw 'toJSON parameter must be a function!'; }
-      this.toJSON = config.toJSON;
     }
 
-    if (config.fetchOptions) { this.fetchOptions = config.fetchOptions; }
+    if (config.fetchOptions) {
+      if (config.constructor.name !== 'Object') { throw 'fetchOptions must be an object!'; }
+    }
+
+    if (config.host) {
+      if (typeof config.host !== 'string') { throw 'host parameter must be a string!'; }
+    }
   }
 
   static currentInscriptionId() {
@@ -31,78 +34,98 @@ export class OrdClient {
   }
 
   static prefixedPathFor(path, options) {
-    options = options || { content: true };
-    if (options.content) {
-      if (path[0] === '/') {
-        path = path.slice(1, path.length);
-      }
-      path = `/content/${path}`;
+    const { scope } = (options || {});
+    if (path[0] === '/') {
+      path = path.slice(1, path.length);
     }
-    return path;
+    return `${scope || CONTENT_API_SCOPE}/${path}`;
   }
 
-  async fetchJsonFor(path, options) {
-    const response = await this.constructor.fetch(this.constructor.prefixedPathFor(path, options), this.constructor.fetchOptions);
-    return await this.constructor.toJSON(response);
-  }
-
-  async getSat(sat, options) {
-    const page = (options || {}).page || 0;
-    const path = `/r/sat/${sat}/${page}`;
-    return await this.fetchJsonFor(path, { content: false });
-  }
-
-  async getInscriptionIdForSatAtIndex(sat, index) {
-    const path = `/r/sat/${sat}/at/${index}`;
-    const data = await this.fetchJsonFor(path, { content: false });
-    return data.id;
+  constructor(config = {}) {
+    this.constructor.validate(config);
+    this.fetchMethod = config.fetch || (fetch && globalThis && fetch.bind(globalThis));
+    this.toJSON = config.toJSON || ((response) => response.json());
+    this.fetchOptions = config.fetchOptions || {};
+    this.buildURLFor = config.host && ((path) => new URL(path, config.host));
   }
 
   async getBlockHash(height = null) {
-    let path = '/r/blockhash';
+    let path = '/blockhash';
     if (height !== null) { path += `/${height}`; }
-    return await this.fetchJsonFor(path, { content: false });
+    return this.fetchJsonFor(path, RECURSIVE_OPTIONS);
   }
 
   async getBlockHeight() {
-    return await this.fetchJsonFor('/r/blockheight', { content: false });
+    return this.fetchJsonFor('/blockheight', RECURSIVE_OPTIONS);
   }
 
   async getBlockInfo(query) {
     if (!query) {
       throw new Error('query parameter of block height or block hash missing!');
     }
-    let path = `/r/blockinfo/${query}`;
-    return await this.fetchJsonFor(path, { content: false });
+    let path = `/blockinfo/${query}`;
+    return this.fetchJsonFor(path, RECURSIVE_OPTIONS);
   }
 
   async getBlockTime() {
-    return await this.fetchJsonFor('/r/blocktime', { content: false });
+    return this.fetchJsonFor('/blocktime', RECURSIVE_OPTIONS);
   }
 
-  async getChildrenForInscriptionId(inscriptionId, options) {
+  async getChildrenFor(inscriptionId, options) {
     const page = (options || {}).page || 0;
-    return await this.fetchJsonFor(`/r/children/${inscriptionId}/${page}`, { content: false });
+    return this.fetchJsonFor(`/children/${inscriptionId}/${page}`, RECURSIVE_OPTIONS);
   }
 
-  async getInfoForInscriptionId(inscriptionId) {
-    const path = `/r/inscription/${inscriptionId}`;
-    const data = await this.fetchJsonFor(path, { content: false });
+  async getChildrenInscriptionsFor(inscriptionId, options) {
+    const page = (options || {}).page || 0;
+    return this.fetchJsonFor(`/children/${inscriptionId}/inscriptions/${page}`, RECURSIVE_OPTIONS);
+  }
+
+  async getInscriptionFor(inscriptionId) {
+    const path = `/inscription/${inscriptionId}`;
+    const data = await this.fetchJsonFor(path, RECURSIVE_OPTIONS);
     return data;
   }
 
-  async getMetadataForInscriptionId(inscriptionId) {
-    return await this.fetchJsonFor(`/r/metadata/${inscriptionId}`, { content: false });
+  async getMetadataFor(inscriptionId) {
+    return this.fetchJsonFor(`/metadata/${inscriptionId}`, RECURSIVE_OPTIONS);
+  }
+
+  async getParentsFor(inscriptionId, options) {
+    const page = (options || {}).page || 0;
+    return this.fetchJsonFor(`/parents/${inscriptionId}/${page}`, RECURSIVE_OPTIONS);
+  }
+
+  async getSat(sat, options) {
+    const page = (options || {}).page || 0;
+    const path = `/sat/${sat}/${page}`;
+    return this.fetchJsonFor(path, RECURSIVE_OPTIONS);
+  }
+
+  async getInscriptionIdForSatAtIndex(sat, index) {
+    const path = `/sat/${sat}/at/${index}`;
+    const data = await this.fetchJsonFor(path, RECURSIVE_OPTIONS);
+    return data.id;
   }
 
   async getLatestInscriptionIdForSat(sat) {
     return this.getInscriptionIdForSatAtIndex(sat, LATEST_INSCRIPTION_INDEX);
   }
 
-  fetch(path, options) {
-    path = this.constructor.prefixedPathFor(path, options)
-    const fetchOptions = (options || {}).fetchOptions || {};
-    return this.constructor.fetch(path, { ...this.constructor.fetchOptions, ...fetchOptions });
+  async getUndelegatedContentFor(inscriptionId) {
+    return this.fetchJsonFor(`/undelegated-content/${inscriptionId}`, RECURSIVE_OPTIONS);
+  }
+
+  async fetch(path, options) {
+    path = this.prefixedPathFor(path, options)
+    let fetchable = this.buildURLFor ? this.buildURLFor(path) : path;
+    const fetchOptions = { ...this.fetchOptions, ...(options || {}).fetchOptions };
+    return this.fetchMethod(fetchable, { ...this.constructor.fetchOptions, ...fetchOptions });
+  }
+
+  async fetchJsonFor(path, options) {
+    const response = await this.fetch(path, options);
+    return await this.toJSON(response);
   }
 
   prefixedPathFor(path, options) {
